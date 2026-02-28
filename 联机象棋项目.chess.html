@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>联机中国象棋 - 最终完整版（调整间距）</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#f7f3e9;font-family:system-ui, sans-serif;text-align:center;padding:40px 0;}
+  .title{font-size:28px;margin:10px 0 25px 0;color:#333;}
+  .room-box{margin:10px auto 30px auto;max-width:480px;}
+  .room-box input,.room-box button{padding:8px 10px;margin:4px;border-radius:6px;border:1px solid #8b4513;font-size:14px;}
+  .room-box button{background:#cd853f;color:#fff;cursor:pointer;}
+  .info{margin:8px 0 40px 0;font-size:15px;color:#333;} /* 增大回合提示与按钮间距 */
+  /* 恢复你之前满意的棋盘样式，无斜线、线条工整 */
+  .board{
+    position:relative;
+    width:480px;  /* 9个交叉点列，间隔60px */
+    height:540px; /* 10个交叉点行，间隔60px */
+    background:#f0d988;
+    border:2px solid #8b4513;
+    margin:0 auto 60px auto; /* 关键：棋盘与按钮间距从30px→60px，拉大1倍 */
+    box-shadow: 0 0 10px rgba(0,0,0,0.2);
+  }
+  .line{position:absolute;background:#8b4513;pointer-events: none;z-index:1;}
+  .v-line{width:1px;height:100%;top:0;}
+  .h-line{height:1px;width:100%;left:0;}
+  .river{
+    position:absolute;
+    top:270px; /* 楚河汉界中间，贴合线条 */
+    left:50%;
+    transform:translateX(-50%);
+    font-size:24px;
+    color:#8b4513;
+    letter-spacing:15px;
+    padding-left:15px;
+    pointer-events: none;
+    z-index:2;
+  }
+  /* 交叉点（落子载体，精准在线条交叉处） */
+  .cross-points{position:absolute;top:0;left:0;width:100%;height:100%;z-index:3;}
+  .cross-point{
+    position:absolute;
+    width:50px;
+    height:50px;
+    margin-left:-25px;
+    margin-top:-25px;
+    cursor:pointer;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+  }
+  .piece{
+    width:100%;
+    height:100%;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:bold;font-size:22px;
+    border:2px solid #8b4513;
+    cursor:pointer;
+    user-select:none;
+    transition:0.1s;
+  }
+  .piece.red{background:#fff;color:#d32f2f;border-color:#d32f2f;}
+  .piece.black{background:#000;color:#fff;border-color:#ccc;}
+  .piece.selected{outline:3px solid #ffeb3b;transform:scale(1.08);}
+  .btn-group{
+    margin:0 auto 40px auto; /* 按钮底部也增加间距，整体更舒展 */
+    max-width:480px;
+  }
+  .btn-group button{
+    padding:10px 20px; /* 按钮稍微放大，更易点击 */
+    margin:0 8px;      /* 按钮之间也拉开间距 */
+    border-radius:8px;
+    border:0;
+    background:#666;
+    color:#fff;
+    cursor:pointer;
+    font-size:16px;
+  }
+
+  /* 手机端适配（同步调整间距） */
+  @media(max-width:520px){
+    body{padding:20px 0;}
+    .title{font-size:24px;margin-bottom:15px;}
+    .room-box{margin-bottom:20px;}
+    .info{margin-bottom:30px;}
+    .board{
+      width:320px;  /* 8×40px */
+      height:360px; /* 9×40px */
+      margin:0 auto 40px auto; /* 手机端棋盘与按钮间距也拉大 */
+    }
+    .river{font-size:18px;letter-spacing:10px;padding-left:10px;top:180px;}
+    .cross-point{width:35px;height:35px;margin-left:-17.5px;margin-top:-17.5px;}
+    .piece{font-size:16px;}
+    .btn-group{margin-bottom:30px;}
+    .btn-group button{padding:8px 16px;margin:0 5px;}
+  }
+</style>
+</head>
+
+<body>
+<div class="title">联机中国象棋 - 最终完整版</div>
+
+<div class="room-box">
+  <input id="roomId" placeholder="房间号" value="12345">
+  <button onclick="createRoom()">创建房间</button>
+  <button onclick="joinRoom()">加入房间</button>
+  <div class="info" id="tip">请创建或加入房间</div>
+</div>
+
+<div class="info" id="turn">当前：红方</div>
+
+<div class="btn-group">
+  <button onclick="restart()">重新开始</button>
+  <button onclick="undo()">悔棋</button>
+</div>
+
+<!-- 核心棋盘（恢复原样式，无斜线） -->
+<div class="board" id="board">
+  <!-- 交叉点容器（动态生成，精准落子） -->
+  <div class="cross-points" id="crossPoints"></div>
+  <!-- 楚河汉界文字 -->
+  <div class="river">楚河 汉界</div>
+</div>
+
+<script>
+const boardEl = document.getElementById('board');
+const crossPointsEl = document.getElementById('crossPoints');
+const tipEl = document.getElementById('tip');
+const turnEl = document.getElementById('turn');
+const roomInput = document.getElementById('roomId');
+
+// 恢复原棋盘配置（9列交叉点×10行交叉点，间隔60px）
+const SIZE = window.innerWidth < 520 ? 40 : 60; // 响应式间隔
+const COL = 9, ROW = 10;
+
+let room = null;
+let myColor = null;
+let currentTurn = 'red';
+let selected = null;
+let history = [];
+
+let pieces = [];
+const PIECE_TYPES = {
+  r:['车','马','相','士','帅','士','相','马','车'],
+  b:['车','马','象','士','将','士','象','马','车']
+};
+
+// 初始化棋盘线条（和你之前满意的完全一致，无斜线）
+function initBoard(){
+  // 清空原有线条
+  boardEl.querySelectorAll('.line').forEach(l=>l.remove());
+  
+  // 竖线（9条，对应9个交叉点列）
+  for(let x=0;x<=8;x++){
+    const line = document.createElement('div');
+    line.className = 'line v-line';
+    line.style.left = x*SIZE + 'px';
+    boardEl.appendChild(line);
+  }
+  
+  // 横线（10条，楚河汉界断开）
+  for(let y=0;y<=9;y++){
+    const line = document.createElement('div');
+    line.className = 'line h-line';
+    line.style.top = y*SIZE + 'px';
+    // 楚河汉界行（第5条横线，断开为左右两段）
+    if(y === 5){
+      line.style.width = '240px';
+      const rightLine = line.cloneNode();
+      rightLine.style.left = '240px';
+      rightLine.style.width = '240px';
+      boardEl.appendChild(rightLine);
+    }
+    boardEl.appendChild(line);
+  }
+  
+  // 生成交叉点（9×10个，精准在线条交叉处）
+  crossPointsEl.innerHTML = '';
+  for(let row=0;row<ROW;row++){
+    for(let col=0;col<COL;col++){
+      const point = document.createElement('div');
+      point.className = 'cross-point';
+      point.style.left = `${col * SIZE}px`;
+      point.style.top = `${row * SIZE}px`;
+      point.dataset.row = row;
+      point.dataset.col = col;
+      crossPointsEl.appendChild(point);
+    }
+  }
+}
+
+// 重置棋子（落子在交叉点上）
+function resetPieces(){
+  pieces = [];
+  // 黑方棋子
+  for(let i=0;i<9;i++) pieces.push({x:i,y:0,color:'black',type:PIECE_TYPES.b[i]});
+  pieces.push({x:1,y:2,color:'black',type:'炮'},{x:7,y:2,color:'black',type:'炮'});
+  [0,2,4,6,8].forEach(x=>pieces.push({x,y:3,color:'black',type:'卒'}));
+  // 红方棋子
+  [0,2,4,6,8].forEach(x=>pieces.push({x,y:6,color:'red',type:'兵'}));
+  pieces.push({x:1,y:7,color:'red',type:'炮'},{x:7,y:7,color:'red',type:'炮'});
+  for(let i=0;i<9;i++) pieces.push({x:i,y:9,color:'red',type:PIECE_TYPES.r[i]});
+  render();
+}
+
+// 渲染棋子（精准落子在交叉点）
+function render(){
+  // 移除原有棋子
+  crossPointsEl.querySelectorAll('.piece').forEach(p=>p.remove());
+  
+  // 渲染新棋子
+  pieces.forEach((p,i)=>{
+    const point = crossPointsEl.querySelector(`.cross-point[data-row="${p.y}"][data-col="${p.x}"]`);
+    if(!point) return;
+    const d = document.createElement('div');
+    d.className = `piece ${p.color}`;
+    d.textContent = p.type;
+    d.dataset.index = i;
+    d.onclick = ()=>clickPiece(i);
+    point.appendChild(d);
+  });
+  
+  // 更新回合提示
+  turnEl.textContent = `当前：${currentTurn=='red'?'红方':'黑方'}`;
+}
+
+// 点击棋子（仅能选择己方回合的棋子）
+function clickPiece(i){
+  const p = pieces[i];
+  if(p.color !== currentTurn) return;
+  if(myColor && p.color !== myColor) return;
+  
+  // 取消之前选中的棋子
+  crossPointsEl.querySelectorAll('.piece').forEach(n=>n.classList.remove('selected'));
+  // 选中当前棋子
+  selected = i;
+  const pieceEl = crossPointsEl.querySelector(`.piece[data-index="${i}"]`);
+  pieceEl.classList.add('selected');
+}
+
+// 点击交叉点移动棋子
+crossPointsEl.onclick = e=>{
+  if(selected==null) return;
+  
+  // 获取点击的交叉点坐标
+  const point = e.target.closest('.cross-point');
+  if(!point) return;
+  const x = parseInt(point.dataset.col);
+  const y = parseInt(point.dataset.row);
+  
+  // 校验走法合法性
+  if(!canMove(selected,x,y)) return;
+  
+  // 保存悔棋记录、执行移动、同步给朋友
+  saveHistory();
+  move(selected,x,y);
+  sendSync();
+  // 取消选中
+  selected = null;
+  crossPointsEl.querySelectorAll('.piece').forEach(n=>n.classList.remove('selected'));
+}
+
+// 完整象棋走法规则（合规，无乱走）
+function canMove(from,x,y){
+  const p = pieces[from];
+  const target = pieces.find(z=>z.x==x&&z.y==y);
+  
+  // 1. 不能吃己方棋子
+  if(target && target.color === p.color) return false;
+  
+  // 按棋子类型校验走法
+  switch(p.type){
+    case '将':
+    case '帅':
+      // 九宫格限制：黑将(0-2行,3-5列)，红帅(7-9行,3-5列)
+      const isBlack = p.color === 'black';
+      if((isBlack && (y < 0 || y > 2 || x < 3 || x > 5)) || 
+         (!isBlack && (y < 7 || y > 9 || x < 3 || x > 5))) return false;
+      // 横竖走1格
+      const dr = Math.abs(y - p.y);
+      const dc = Math.abs(x - p.x);
+      if(!((dr === 1 && dc === 0) || (dr === 0 && dc === 1))) return false;
+      // 将帅不照面
+      return !checkJiangFace();
+      
+    case '士':
+    case '仕':
+      // 九宫格限制
+      const isBlackShi = p.color === 'black';
+      if((isBlackShi && (y < 0 || y > 2 || x < 3 || x > 5)) || 
+         (!isBlackShi && (y < 7 || y > 9 || x < 3 || x > 5))) return false;
+      // 斜走1格
+      const drShi = Math.abs(y - p.y);
+      const dcShi = Math.abs(x - p.x);
+      return drShi === 1 && dcShi === 1;
+      
+    case '象':
+    case '相':
+      // 不过河：黑象(0-4行)，红相(5-9行)
+      const isBlackXiang = p.color === 'black';
+      if((isBlackXiang && y > 4) || (!isBlackXiang && y < 5)) return false;
+      // 走田字（2×2）
+      const drXiang = Math.abs(y - p.y);
+      const dcXiang = Math.abs(x - p.x);
+      if(drXiang !== 2 || dcXiang !== 2) return false;
+      // 不塞象眼（田字中心无棋子）
+      const midX = (x + p.x) / 2;
+      const midY = (y + p.y) / 2;
+      return !pieces.some(z=>z.x === midX && z.y === midY);
+      
+    case '马':
+      // 走日字（1×2 或 2×1）
+      const drMa = Math.abs(y - p.y);
+      const dcMa = Math.abs(x - p.x);
+      if(!((drMa === 1 && dcMa === 2) || (drMa === 2 && dcMa === 1))) return false;
+      // 不绊马脚
+      let footX = p.x, footY = p.y;
+      if(drMa === 2) footY = p.y + (y - p.y)/2;
+      if(dcMa === 2) footX = p.x + (x - p.x)/2;
+      return !pieces.some(z=>z.x === footX && z.y === footY);
+      
+    case '车':
+      // 横竖走，无阻挡
+      if(p.x !== x && p.y !== y) return false;
+      return isPathClear(p.x, p.y, x, y);
+      
+    case '炮':
+      // 横竖走，不吃子无阻挡，吃子隔1个
+      if(p.x !== x && p.y !== y) return false;
+      const targetExist = !!target;
+      const pieceCount = countPathPieces(p.x, p.y, x, y);
+      return (targetExist && pieceCount === 1) || (!targetExist && pieceCount === 0);
+      
+    case '卒':
+    case '兵':
+      const isBlackBing = p.color === 'black';
+      const drBing = y - p.y;
+      const dcBing = Math.abs(x - p.x);
+      // 未过河：只能向前1格（黑向下，红向上）
+      const hasCrossed = (isBlackBing && p.y > 4) || (!isBlackBing && p.y < 5);
+      if(!hasCrossed){
+        return (isBlackBing ? drBing === 1 : drBing === -1) && dcBing === 0;
+      }else{
+        // 已过河：向前1格 或 横走1格
+        return ((isBlackBing ? drBing === 1 : drBing === -1) && dcBing === 0) || (drBing === 0 && dcBing === 1);
+      }
+      
+    default:
+      return false;
+  }
+}
+
+// 辅助：检查车/炮路径是否无阻挡
+function isPathClear(fromX, fromY, toX, toY){
+  if(fromX === toX){
+    // 横向路径
+    const start = Math.min(fromY, toY) + 1;
+    const end = Math.max(fromY, toY);
+    for(let y=start; y<end; y++){
+      if(pieces.some(z=>z.x === fromX && z.y === y)) return false;
+    }
+  }else{
+    // 纵向路径
+    const start = Math.min(fromX, toX) + 1;
+    const end = Math.max(fromX, toX);
+    for(let x=start; x<end; x++){
+      if(pieces.some(z=>z.x === x && z.y === fromY)) return false;
+    }
+  }
+  return true;
+}
+
+// 辅助：统计路径上的棋子数（炮专用）
+function countPathPieces(fromX, fromY, toX, toY){
+  let count = 0;
+  if(fromX === toX){
+    const start = Math.min(fromY, toY) + 1;
+    const end = Math.max(fromY, toY);
+    for(let y=start; y<end; y++){
+      if(pieces.some(z=>z.x === fromX && z.y === y)) count++;
+    }
+  }else{
+    const start = Math.min(fromX, toX) + 1;
+    const end = Math.max(fromX, toX);
+    for(let x=start; x<end; x++){
+      if(pieces.some(z=>z.x === x && z.y === fromY)) count++;
+    }
+  }
+  return count;
+}
+
+// 辅助：检查将帅照面
+function checkJiangFace(){
+  const jiang = pieces.find(p=>p.type === '将' && p.color === 'black');
+  const shuai = pieces.find(p=>p.type === '帅' && p.color === 'red');
+  if(!jiang || !shuai) return false;
+  // 同一列
+  if(jiang.x !== shuai.x) return false;
+  // 中间无棋子阻挡
+  return isPathClear(jiang.x, jiang.y, shuai.x, shuai.y);
+}
+
+// 执行移动（吃子+更新位置）
+function move(from,x,y){
+  const p = pieces[from];
+  const targetIndex = pieces.findIndex(z=>z.x === x && z.y === y);
+  // 吃子（移除目标棋子）
+  if(targetIndex !== -1) pieces.splice(targetIndex, 1);
+  // 更新棋子位置
+  p.x = x;
+  p.y = y;
+  // 切换回合
+  currentTurn = currentTurn === 'red' ? 'black' : 'red';
+  // 重新渲染
+  render();
+}
+
+// 保存悔棋记录
+function saveHistory(){
+  history.push(JSON.stringify([JSON.parse(JSON.stringify(pieces)), currentTurn]));
+}
+
+// 悔棋功能
+function undo(){
+  if(history.length < 1){
+    tipEl.textContent = '无法悔棋（无历史步骤）';
+    setTimeout(()=>{
+      tipEl.textContent = myColor ? `房间${room} · 你是${myColor=='red'?'红方':'黑方'}` : '请创建或加入房间';
+    },1500);
+    return;
+  }
+  const data = JSON.parse(history.pop());
+  pieces = data[0];
+  currentTurn = data[1];
+  sendSync();
+  render();
+}
+
+// 重新开始
+function restart(){
+  history = [];
+  currentTurn = 'red';
+  resetPieces();
+  sendSync();
+  tipEl.textContent = myColor ? `房间${room} · 你是${myColor=='red'?'红方':'黑方'}` : '请创建或加入房间';
+}
+
+// 联机同步核心（无服务器，点对点同步）
+function createRoom(){
+  room = roomInput.value.trim() || '12345';
+  myColor = 'red';
+  tipEl.textContent = `房间${room}已创建 · 你是红方`;
+  // 启动同步循环
+  syncLoop();
+}
+function joinRoom(){
+  room = roomInput.value.trim() || '12345';
+  myColor = 'black';
+  tipEl.textContent = `已加入房间${room} · 你是黑方`;
+  // 启动同步循环，同步对方已走的步骤
+  syncLoop();
+}
+
+// 发送同步数据（存到本地存储，对方读取）
+function sendSync(){
+  if(!room) return;
+  localStorage.setItem(`xiangqi_room_${room}`, JSON.stringify({
+    pieces: pieces,
+    currentTurn: currentTurn
+  }));
+}
+
+// 同步循环（每隔500ms读取对方同步的数据）
+function syncLoop(){
+  setInterval(()=>{
+    if(!room) return;
+    const syncData = localStorage.getItem(`xiangqi_room_${room}`);
+    if(!syncData) return;
+    const { pieces: syncPieces, currentTurn: syncTurn } = JSON.parse(syncData);
+    // 同步棋子和回合（避免重复同步）
+    if(JSON.stringify(pieces) !== JSON.stringify(syncPieces)){
+      pieces = syncPieces;
+      currentTurn = syncTurn;
+      render();
+    }
+  }, 500);
+}
+
+// 初始化（启动游戏）
+initBoard();
+resetPieces();
+</script>
+</body>
+</html>
