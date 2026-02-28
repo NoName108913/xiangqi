@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>标准中国象棋（交叉点落子版）</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "微软雅黑", sans-serif;
+        }
+
+        body {
+            background-color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            /* 增大上下内边距，让整体更舒展 */
+            padding: 40px 0;
+        }
+
+        .game-title {
+            font-size: 32px;
+            color: #333;
+            /* 增大与下方信息栏的间距 */
+            margin-bottom: 25px;
+        }
+
+        .game-info {
+            font-size: 18px;
+            color: #555;
+            /* 增大与棋盘的间距 */
+            margin-bottom: 30px;
+        }
+
+        /* 核心：交叉点棋盘（9列交叉点×10行交叉点，每格60px） */
+        .chess-board {
+            position: relative;
+            width: 480px;  /* 8个间隔 × 60px（9个竖线交叉点） */
+            height: 540px; /* 9个间隔 × 60px（10个横线交叉点） */
+            background-color: #f0d988;
+            border: 2px solid #8b4513;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+            /* 增大与下方按钮的间距 */
+            margin-bottom: 30px;
+        }
+
+        /* 所有线条统一样式 */
+        .board-line {
+            position: absolute;
+            background-color: #8b4513;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        /* 竖线：9条（对应9个交叉点列，无多余边框线） */
+        .v-line {
+            width: 1px;
+            height: 100%;
+            top: 0;
+        }
+        .v-line-0 { left: 0px; }
+        .v-line-1 { left: 60px; }
+        .v-line-2 { left: 120px; }
+        .v-line-3 { left: 180px; }
+        .v-line-4 { left: 240px; }
+        .v-line-5 { left: 300px; }
+        .v-line-6 { left: 360px; }
+        .v-line-7 { left: 420px; }
+        .v-line-8 { left: 480px; }
+
+        /* 横线：10条（对应10个交叉点行，楚河汉界断开） */
+        .h-line {
+            height: 1px;
+            width: 100%;
+            left: 0;
+        }
+        /* 黑方区域横线（完整） */
+        .h-line-0 { top: 0px; }
+        .h-line-1 { top: 60px; }
+        .h-line-2 { top: 120px; }
+        .h-line-3 { top: 180px; }
+        .h-line-4 { top: 240px; }
+        /* 楚河汉界行（第5条横线，断开为左右两段） */
+        .h-line-river-left { height: 1px; width: 240px; left: 0; top: 300px; }
+        .h-line-river-right { height: 1px; width: 240px; left: 240px; top: 300px; }
+        /* 红方区域横线（完整） */
+        .h-line-6 { top: 360px; }
+        .h-line-7 { top: 420px; }
+        .h-line-8 { top: 480px; }
+        .h-line-9 { top: 540px; }
+
+        /* 楚河汉界文字（居中，不遮挡线条） */
+        .river-text {
+            position: absolute;
+            top: 270px; /* 楚河汉界两行中间 */
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 24px;
+            color: #8b4513;
+            letter-spacing: 15px;
+            padding-left: 15px;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        /* 交叉点容器（核心：9×10个交叉点，用于落子和点击） */
+        .cross-points {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 3;
+        }
+
+        /* 单个交叉点（棋子的载体，精准定位在线条交接处） */
+        .cross-point {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            margin-left: -25px;
+            margin-top: -25px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 3;
+        }
+
+        /* 棋子样式（精准居中在交叉点） */
+        .chess-piece {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 22px;
+            font-weight: bold;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+            transition: transform 0.1s;
+        }
+        .chess-piece.selected {
+            transform: scale(1.1);
+            box-shadow: 0 0 12px #ff9800;
+        }
+        /* 黑棋（黑底白字） */
+        .black {
+            background-color: #000;
+            color: #fff;
+            border: 2px solid #ccc;
+        }
+        /* 红棋（白底红字） */
+        .red {
+            background-color: #fff;
+            color: #d32f2f;
+            border: 2px solid #d32f2f;
+        }
+
+        /* 按钮组 */
+        .btn-group {
+            margin-top: 0; /* 由棋盘的margin-bottom控制间距 */
+        }
+        .control-btn {
+            padding: 8px 25px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 0 5px;
+            transition: background-color 0.3s;
+        }
+        .control-btn:hover {
+            background-color: #45a049;
+        }
+
+        /* 胜负弹窗 */
+        .win-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .modal-content {
+            background: #fff;
+            padding: 25px 40px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+        }
+        .win-title {
+            font-size: 26px;
+            margin-bottom: 15px;
+        }
+        .win-player {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .black-win { color: #000; }
+        .red-win { color: #d32f2f; }
+
+        /* 手机端响应式适配（核心：等比例缩小交叉点和线条） */
+        @media (max-width: 520px) {
+            body {
+                padding: 20px 0;
+            }
+            .game-title {
+                font-size: 24px;
+                margin-bottom: 15px;
+            }
+            .game-info {
+                margin-bottom: 20px;
+            }
+            .chess-board {
+                width: 320px;  /* 8×40px */
+                height: 360px; /* 9×40px */
+                margin-bottom: 20px;
+            }
+            /* 竖线适配 */
+            .v-line-0 { left: 0px; }
+            .v-line-1 { left: 40px; }
+            .v-line-2 { left: 80px; }
+            .v-line-3 { left: 120px; }
+            .v-line-4 { left: 160px; }
+            .v-line-5 { left: 200px; }
+            .v-line-6 { left: 240px; }
+            .v-line-7 { left: 280px; }
+            .v-line-8 { left: 320px; }
+            /* 横线适配 */
+            .h-line-0 { top: 0px; }
+            .h-line-1 { top: 40px; }
+            .h-line-2 { top: 80px; }
+            .h-line-3 { top: 120px; }
+            .h-line-4 { top: 160px; }
+            .h-line-river-left, .h-line-river-right { width: 160px; top: 200px; }
+            .h-line-river-right { left: 160px; }
+            .h-line-6 { top: 240px; }
+            .h-line-7 { top: 280px; }
+            .h-line-8 { top: 320px; }
+            .h-line-9 { top: 360px; }
+            /* 文字适配 */
+            .river-text { font-size: 18px; letter-spacing: 10px; padding-left: 10px; top: 180px; }
+            /* 交叉点和棋子适配 */
+            .cross-point { width: 35px; height: 35px; margin-left: -17.5px; margin-top: -17.5px; }
+            .chess-piece { font-size: 16px; }
+        }
+    </style>
+</head>
+<body>
+    <h1 class="game-title">网页版中国象棋</h1>
+    <div class="game-info">当前回合：<span id="curr-player">黑方</span> | 状态：<span id="status">请选择己方棋子</span></div>
+
+    <!-- 核心棋盘（线条+交叉点） -->
+    <div class="chess-board">
+        <!-- 竖线（9条，对应9个交叉点列） -->
+        <div class="board-line v-line v-line-0"></div>
+        <div class="board-line v-line v-line-1"></div>
+        <div class="board-line v-line v-line-2"></div>
+        <div class="board-line v-line v-line-3"></div>
+        <div class="board-line v-line v-line-4"></div>
+        <div class="board-line v-line v-line-5"></div>
+        <div class="board-line v-line v-line-6"></div>
+        <div class="board-line v-line v-line-7"></div>
+        <div class="board-line v-line v-line-8"></div>
+
+        <!-- 横线（10条，楚河汉界断开） -->
+        <div class="board-line h-line h-line-0"></div>
+        <div class="board-line h-line h-line-1"></div>
+        <div class="board-line h-line h-line-2"></div>
+        <div class="board-line h-line h-line-3"></div>
+        <div class="board-line h-line h-line-4"></div>
+        <div class="board-line h-line-river-left"></div>
+        <div class="board-line h-line-river-right"></div>
+        <div class="board-line h-line h-line-6"></div>
+        <div class="board-line h-line h-line-7"></div>
+        <div class="board-line h-line h-line-8"></div>
+        <div class="board-line h-line h-line-9"></div>
+
+        <!-- 楚河汉界文字 -->
+        <div class="river-text">楚河 汉界</div>
+
+        <!-- 交叉点容器（动态生成9×10个交叉点） -->
+        <div class="cross-points" id="crossPoints"></div>
+    </div>
+
+    <div class="btn-group">
+        <button class="control-btn" onclick="restartGame()">重新开始</button>
+        <button class="control-btn" onclick="undoMove()">悔棋</button>
+    </div>
+
+    <!-- 胜负弹窗 -->
+    <div class="win-modal" id="winModal">
+        <div class="modal-content">
+            <div class="win-title">游戏结束</div>
+            <div class="win-player" id="win-text"></div>
+            <button class="control-btn" onclick="closeModal()">确定</button>
+        </div>
+    </div>
+
+    <script>
+        // 基础配置（9列交叉点 × 10行交叉点，电脑端间隔60px）
+        const COL_COUNT = 9;  // 竖线交叉点数量
+        const ROW_COUNT = 10; // 横线交叉点数量
+        let GAP_SIZE = 60;    // 交叉点之间的间隔（响应式适配）
+        const EMPTY = null;
+
+        // 棋子定义
+        const PIECES = {
+            // 黑方
+            b_jiang: { name: '将', color: 'black', type: 'jiang' },
+            b_shi1: { name: '士', color: 'black', type: 'shi' },
+            b_shi2: { name: '士', color: 'black', type: 'shi' },
+            b_xiang1: { name: '象', color: 'black', type: 'xiang' },
+            b_xiang2: { name: '象', color: 'black', type: 'xiang' },
+            b_ma1: { name: '马', color: 'black', type: 'ma' },
+            b_ma2: { name: '马', color: 'black', type: 'ma' },
+            b_ju1: { name: '车', color: 'black', type: 'ju' },
+            b_ju2: { name: '车', color: 'black', type: 'ju' },
+            b_pao1: { name: '炮', color: 'black', type: 'pao' },
+            b_pao2: { name: '炮', color: 'black', type: 'pao' },
+            b_bing1: { name: '卒', color: 'black', type: 'bing' },
+            b_bing2: { name: '卒', color: 'black', type: 'bing' },
+            b_bing3: { name: '卒', color: 'black', type: 'bing' },
+            b_bing4: { name: '卒', color: 'black', type: 'bing' },
+            b_bing5: { name: '卒', color: 'black', type: 'bing' },
+
+            // 红方
+            r_shuai: { name: '帅', color: 'red', type: 'jiang' },
+            r_shi1: { name: '仕', color: 'red', type: 'shi' },
+            r_shi2: { name: '仕', color: 'red', type: 'shi' },
+            r_xiang1: { name: '相', color: 'red', type: 'xiang' },
+            r_xiang2: { name: '相', color: 'red', type: 'xiang' },
+            r_ma1: { name: '马', color: 'red', type: 'ma' },
+            r_ma2: { name: '马', color: 'red', type: 'ma' },
+            r_ju1: { name: '车', color: 'red', type: 'ju' },
+            r_ju2: { name: '车', color: 'red', type: 'ju' },
+            r_pao1: { name: '炮', color: 'red', type: 'pao' },
+            r_pao2: { name: '炮', color: 'red', type: 'pao' },
+            r_bing1: { name: '兵', color: 'red', type: 'bing' },
+            r_bing2: { name: '兵', color: 'red', type: 'bing' },
+            r_bing3: { name: '兵', color: 'red', type: 'bing' },
+            r_bing4: { name: '兵', color: 'red', type: 'bing' },
+            r_bing5: { name: '兵', color: 'red', type: 'bing' }
+        };
+
+        // 初始布局（[row][col] 对应交叉点的行和列）
+        const INIT_BOARD = [
+            [PIECES.b_ju1, PIECES.b_ma1, PIECES.b_xiang1, PIECES.b_shi1, PIECES.b_jiang, PIECES.b_shi2, PIECES.b_xiang2, PIECES.b_ma2, PIECES.b_ju2],
+            [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY],
+            [EMPTY, PIECES.b_pao1, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, PIECES.b_pao2, EMPTY],
+            [PIECES.b_bing1, EMPTY, PIECES.b_bing2, EMPTY, PIECES.b_bing3, EMPTY, PIECES.b_bing4, EMPTY, PIECES.b_bing5],
+            [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY],
+            [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY],
+            [PIECES.r_bing1, EMPTY, PIECES.r_bing2, EMPTY, PIECES.r_bing3, EMPTY, PIECES.r_bing4, EMPTY, PIECES.r_bing5],
+            [EMPTY, PIECES.r_pao1, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, PIECES.r_pao2, EMPTY],
+            [EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY],
+            [PIECES.r_ju1, PIECES.r_ma1, PIECES.r_xiang1, PIECES.r_shi1, PIECES.r_shuai, PIECES.r_shi2, PIECES.r_xiang2, PIECES.r_ma2, PIECES.r_ju2]
+        ];
+
+        // 全局变量
+        let board = [];
+        let currColor = 'black';
+        let selected = { row: -1, col: -1, piece: EMPTY };
+        let gameOver = false;
+        let history = [];
+
+        // 页面加载初始化
+        window.onload = function() {
+            // 响应式适配间隔尺寸
+            GAP_SIZE = window.innerWidth < 520 ? 40 : 60;
+            initGame();
+        };
+
+        // 初始化游戏（核心：生成交叉点+渲染棋子）
+        function initGame() {
+            // 深拷贝初始布局
+            board = JSON.parse(JSON.stringify(INIT_BOARD));
+            const crossPoints = document.getElementById('crossPoints');
+            crossPoints.innerHTML = '';
+
+            // 生成9×10个交叉点（精准定位在线条交接处）
+            for (let row = 0; row < ROW_COUNT; row++) {
+                for (let col = 0; col < COL_COUNT; col++) {
+                    const point = document.createElement('div');
+                    point.className = 'cross-point';
+                    // 核心定位：left=列×间隔，top=行×间隔（完美对齐线条交叉点）
+                    point.style.left = `${col * GAP_SIZE}px`;
+                    point.style.top = `${row * GAP_SIZE}px`;
+                    point.dataset.row = row;
+                    point.dataset.col = col;
+                    point.onclick = () => clickCrossPoint(row, col);
+                    crossPoints.appendChild(point);
+
+                    // 渲染棋子到交叉点
+                    const piece = board[row][col];
+                    if (piece !== EMPTY) {
+                        renderPiece(point, piece);
+                    }
+                }
+            }
+
+            // 重置游戏状态
+            currColor = 'black';
+            gameOver = false;
+            selected = { row: -1, col: -1, piece: EMPTY };
+            history = [];
+            updateInfo('黑方先行，请选择己方棋子');
+            closeModal();
+        }
+
+        // 渲染棋子到指定交叉点
+        function renderPiece(point, piece) {
+            const pieceEl = document.createElement('div');
+            pieceEl.className = `chess-piece ${piece.color}`;
+            pieceEl.textContent = piece.name;
+            pieceEl.dataset.type = piece.type;
+            point.appendChild(pieceEl);
+        }
+
+        // 获取指定交叉点元素
+        function getCrossPoint(row, col) {
+            return document.querySelector(`.cross-point[data-row="${row}"][data-col="${col}"]`);
+        }
+
+        // 点击交叉点的核心逻辑
+        function clickCrossPoint(row, col) {
+            if (gameOver) return;
+            const currPiece = board[row][col];
+
+            // 1. 未选中棋子：仅选择己方棋子
+            if (selected.piece === EMPTY) {
+                if (currPiece === EMPTY) {
+                    updateInfo('请选择己方棋子');
+                    return;
+                }
+                if (currPiece.color !== currColor) {
+                    updateInfo('不能选择对方棋子');
+                    return;
+                }
+                // 选中成功，添加高亮
+                selected = { row, col, piece: currPiece };
+                const pieceEl = getCrossPoint(row, col).querySelector('.chess-piece');
+                pieceEl.classList.add('selected');
+                updateInfo(`已选中【${currPiece.name}】，请选择落点`);
+                return;
+            }
+
+            // 2. 取消选择：点击已选中的交叉点
+            if (row === selected.row && col === selected.col) {
+                const pieceEl = getCrossPoint(row, col).querySelector('.chess-piece');
+                pieceEl.classList.remove('selected');
+                selected = { row: -1, col: -1, piece: EMPTY };
+                updateInfo('已取消选择，请重新选棋');
+                return;
+            }
+
+            // 3. 验证移动合法性并执行
+            if (isValidMove(selected.row, selected.col, row, col)) {
+                // 记录悔棋数据
+                history.push({
+                    from: { r: selected.row, c: selected.col },
+                    to: { r: row, c: col },
+                    captured: currPiece,
+                    board: JSON.parse(JSON.stringify(board))
+                });
+
+                // 执行移动：移除目标棋子（吃子）
+                const targetPoint = getCrossPoint(row, col);
+                if (currPiece !== EMPTY) {
+                    targetPoint.querySelector('.chess-piece').remove();
+                }
+
+                // 移动选中的棋子
+                const sourcePoint = getCrossPoint(selected.row, selected.col);
+                const pieceEl = sourcePoint.querySelector('.chess-piece');
+                pieceEl.classList.remove('selected');
+                targetPoint.appendChild(pieceEl);
+
+                // 更新棋盘数据
+                board[row][col] = selected.piece;
+                board[selected.row][selected.col] = EMPTY;
+
+                // 检查是否获胜（吃掉将帅）
+                if (checkWin()) {
+                    gameOver = true;
+                    const winText = currColor === 'black' ? '黑方获胜！' : '红方获胜！';
+                    document.getElementById('win-text').textContent = winText;
+                    document.getElementById('win-text').className = `win-player ${currColor}-win`;
+                    document.getElementById('winModal').style.display = 'flex';
+                    updateInfo(winText);
+                    return;
+                }
+
+                // 切换回合
+                currColor = currColor === 'black' ? 'red' : 'black';
+                selected = { row: -1, col: -1, piece: EMPTY };
+                updateInfo(`${currColor === 'black' ? '黑方' : '红方'}回合，请选择棋子`);
+            } else {
+                updateInfo('走法不合法，请重新选择落点');
+            }
+        }
+
+        // 象棋走法规则校验（完整合规）
+        function isValidMove(fromR, fromC, toR, toC) {
+            const piece = board[fromR][fromC];
+            const targetPiece = board[toR][toC];
+
+            // 目标是己方棋子，直接不合法
+            if (targetPiece !== EMPTY && targetPiece.color === piece.color) return false;
+
+            switch (piece.type) {
+                case 'jiang': // 将/帅（九宫格+横竖1格+不照面）
+                    return isValidJiang(fromR, fromC, toR, toC);
+                case 'shi': // 士/仕（九宫格+斜走1格）
+                    return isValidShi(fromR, fromC, toR, toC);
+                case 'xiang': // 象/相（走田+不过河+不塞象眼）
+                    return isValidXiang(fromR, fromC, toR, toC);
+                case 'ma': // 马（走日+不绊马脚）
+                    return isValidMa(fromR, fromC, toR, toC);
+                case 'ju': // 车（横竖+无阻挡）
+                    return isValidJu(fromR, fromC, toR, toC);
+                case 'pao': // 炮（横竖+不吃子无阻挡/吃子隔1个）
+                    return isValidPao(fromR, fromC, toR, toC);
+                case 'bing': // 卒/兵（未过河前进一步，过河横走/前进）
+                    return isValidBing(fromR, fromC, toR, toC);
+                default:
+                    return false;
+            }
+        }
+
+        // 将/帅规则实现
+        function isValidJiang(r1, c1, r2, c2) {
+            const isBlack = board[r1][c1].color === 'black';
+            // 九宫格限制：黑将(0-2行,3-5列)，红帅(7-9行,3-5列)
+            if ((isBlack && (r2 < 0 || r2 > 2 || c2 < 3 || c2 > 5)) ||
+                (!isBlack && (r2 < 7 || r2 > 9 || c2 < 3 || c2 > 5))) return false;
+            // 横竖走1格
+            const dr = Math.abs(r2 - r1);
+            const dc = Math.abs(c2 - c1);
+            if (!((dr === 1 && dc === 0) || (dr === 0 && dc === 1))) return false;
+            // 将帅不照面
+            return !checkJiangFace();
+        }
+
+        // 士/仕规则实现
+        function isValidShi(r1, c1, r2, c2) {
+            const isBlack = board[r1][c1].color === 'black';
+            // 九宫格限制
+            if ((isBlack && (r2 < 0 || r2 > 2 || c2 < 3 || c2 > 5)) ||
+                (!isBlack && (r2 < 7 || r2 > 9 || c2 < 3 || c2 > 5))) return false;
+            // 斜走1格
+            const dr = Math.abs(r2 - r1);
+            const dc = Math.abs(c2 - c1);
+            return dr === 1 && dc === 1;
+        }
+
+        // 象/相规则实现
+        function isValidXiang(r1, c1, r2, c2) {
+            const isBlack = board[r1][c1].color === 'black';
+            // 不过河：黑象(0-4行)，红相(5-9行)
+            if ((isBlack && r2 > 4) || (!isBlack && r2 < 5)) return false;
+            // 走田字（2×2）
+            const dr = Math.abs(r2 - r1);
+            const dc = Math.abs(c2 - c1);
+            if (dr !== 2 || dc !== 2) return false;
+            // 不塞象眼（田字中心交叉点无棋子）
+            const midR = (r1 + r2) / 2;
+            const midC = (c1 + c2) / 2;
+            return board[midR][midC] === EMPTY;
+        }
+
+        // 马规则实现
+        function isValidMa(r1, c1, r2, c2) {
+            // 走日字（1×2 或 2×1）
+            const dr = Math.abs(r2 - r1);
+            const dc = Math.abs(c2 - c1);
+            if (!((dr === 1 && dc === 2) || (dr === 2 && dc === 1))) return false;
+            // 找马脚位置
+            let footR = r1, footC = c1;
+            if (dr === 2) footR = r1 + (r2 - r1) / 2;
+            if (dc === 2) footC = c1 + (c2 - c1) / 2;
+            // 马脚无棋子
+            return board[footR][footC] === EMPTY;
+        }
+
+        // 车规则实现
+        function isValidJu(r1, c1, r2, c2) {
+            // 必须横竖走（同一行或同一列）
+            if (r1 !== r2 && c1 !== c2) return false;
+            // 路径无阻挡
+            return isPathClear(r1, c1, r2, c2);
+        }
+
+        // 炮规则实现
+        function isValidPao(r1, c1, r2, c2) {
+            // 必须横竖走
+            if (r1 !== r2 && c1 !== c2) return false;
+            const targetPiece = board[r2][c2];
+            // 统计路径上的棋子数
+            const pieceCount = countPathPieces(r1, c1, r2, c2);
+            // 不吃子：路径0个；吃子：路径1个
+            return (targetPiece === EMPTY && pieceCount === 0) || (targetPiece !== EMPTY && pieceCount === 1);
+        }
+
+        // 卒/兵规则实现
+        function isValidBing(r1, c1, r2, c2) {
+            const isBlack = board[r1][c1].color === 'black';
+            const dr = r2 - r1;
+            const dc = Math.abs(c2 - c1);
+            // 未过河判定：黑卒(0-4行)，红兵(5-9行)
+            const hasCrossed = (isBlack && r1 > 4) || (!isBlack && r1 < 5);
+            
+            if (!hasCrossed) {
+                // 未过河：只能向前1格（黑向下，红向上）
+                return (isBlack ? dr === 1 : dr === -1) && dc === 0;
+            } else {
+                // 已过河：向前1格 或 横走1格
+                return ((isBlack ? dr === 1 : dr === -1) && dc === 0) || (dr === 0 && dc === 1);
+            }
+        }
+
+        // 辅助：检查路径是否无阻挡（车专用）
+        function isPathClear(r1, c1, r2, c2) {
+            if (r1 === r2) {
+                // 横向路径
+                const startCol = Math.min(c1, c2) + 1;
+                const endCol = Math.max(c1, c2);
+                for (let c = startCol; c < endCol; c++) {
+                    if (board[r1][c] !== EMPTY) return false;
+                }
+            } else {
+                // 纵向路径
+                const startRow = Math.min(r1, r2) + 1;
+                const endRow = Math.max(r1, r2);
+                for (let r = startRow; r < endRow; r++) {
+                    if (board[r][c1] !== EMPTY) return false;
+                }
+            }
+            return true;
+        }
+
+        // 辅助：统计路径上的棋子数（炮专用）
+        function countPathPieces(r1, c1, r2, c2) {
+            let count = 0;
+            if (r1 === r2) {
+                const startCol = Math.min(c1, c2) + 1;
+                const endCol = Math.max(c1, c2);
+                for (let c = startCol; c < endCol; c++) {
+                    if (board[r1][c] !== EMPTY) count++;
+                }
+            } else {
+                const startRow = Math.min(r1, r2) + 1;
+                const endRow = Math.max(r1, r2);
+                for (let r = startRow; r < endRow; r++) {
+                    if (board[r][c1] !== EMPTY) count++;
+                }
+            }
+            return count;
+        }
+
+        // 辅助：检查将帅照面
+        function checkJiangFace() {
+            let jiangPos = null, shuaiPos = null;
+            // 查找将帅位置
+            for (let r = 0; r < ROW_COUNT; r++) {
+                for (let c = 0; c < COL_COUNT; c++) {
+                    const p = board[r][c];
+                    if (p?.type === 'jiang' && p.color === 'black') jiangPos = { r, c };
+                    if (p?.type === 'jiang' && p.color === 'red') shuaiPos = { r, c };
+                }
+            }
+            if (!jiangPos || !shuaiPos) return false;
+            // 同一列
+            if (jiangPos.c !== shuaiPos.c) return false;
+            // 中间无棋子阻挡
+            return isPathClear(jiangPos.r, jiangPos.c, shuaiPos.r, shuaiPos.c);
+        }
+
+        // 检查获胜条件（吃掉将帅）
+        function checkWin() {
+            let jiangExist = false, shuaiExist = false;
+            for (let r = 0; r < ROW_COUNT; r++) {
+                for (let c = 0; c < COL_COUNT; c++) {
+                    const p = board[r][c];
+                    if (p?.type === 'jiang' && p.color === 'black') jiangExist = true;
+                    if (p?.type === 'jiang' && p.color === 'red') shuaiExist = true;
+                }
+            }
+            return !jiangExist || !shuaiExist;
+        }
+
+        // 悔棋功能
+        function undoMove() {
+            if (history.length === 0 || gameOver) {
+                updateInfo('无法悔棋');
+                return;
+            }
+            const lastMove = history.pop();
+            board = lastMove.board;
+            initGame();
+            // 回退回合
+            currColor = currColor === 'black' ? 'red' : 'black';
+            updateInfo(`已悔棋，当前为${currColor === 'black' ? '黑方' : '红方'}回合`);
+        }
+
+        // 重新开始游戏
+        function restartGame() {
+            initGame();
+        }
+
+        // 关闭胜负弹窗
+        function closeModal() {
+            document.getElementById('winModal').style.display = 'none';
+        }
+
+        // 更新信息提示栏
+        function updateInfo(text) {
+            document.getElementById('curr-player').textContent = currColor === 'black' ? '黑方' : '红方';
+            document.getElementById('status').textContent = text;
+        }
+    </script>
+</body>
+</html>
